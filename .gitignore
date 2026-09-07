@@ -1,0 +1,11 @@
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# Generado por `npm run setup` a partir del .env de cada maquina.
+.env.e2e
+
+# Binarios bajados por plataforma en el setup. Nadie commitea un .exe.
+tools/
