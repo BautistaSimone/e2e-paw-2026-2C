@@ -18,6 +18,7 @@
     "app": "tsx scripts/app.ts",
     "mailpit": "tsx scripts/mailpit.ts",
     "db:reset": "tsx scripts/db-reset.ts",
+    "db:clean-dev": "tsx scripts/dev-clean.ts",
     "inspect": "tsx scripts/inspect.ts",
     "check:rules": "tsx scripts/check-rules.ts",
     "typecheck": "tsc --noEmit"

@@ -52,6 +52,27 @@ test('aceptar las inscripciones habilita arrancar el torneo', async ({
   expect(await ids.currentRoundMatches(tournament.id)).not.toHaveLength(0);
 });
 
+/**
+ * El cupo se aplica al aceptar, no al anotarse: con seis anotados para cuatro
+ * lugares el organizador elige, y el quinto rebota con un aviso en pantalla en
+ * vez de con una pantalla de error.
+ */
+test('el cupo frena al aceptar y no al anotarse', async ({ scenario, managementPage }) => {
+  const tournament = await scenario.withPendingTeams({ name: 'Copa Elegir', teams: 6, maxTeams: 4 });
+
+  await managementPage.goto(tournament.id, 'equipos');
+  for (const team of tournament.teams.slice(0, 4)) {
+    await managementPage.acceptTeam(team.name);
+  }
+
+  await managementPage.acceptTeam(tournament.teams[4]!.name);
+
+  await expect(managementPage.flashError).toBeVisible();
+  const registrations = await ids.registrationsOf(tournament.id);
+  expect(registrations.filter((registration) => registration.status === 'ACTIVE')).toHaveLength(4);
+  expect(registrations.filter((registration) => registration.status === 'PENDING')).toHaveLength(2);
+});
+
 test('la planilla de la fecha se carga desde la pantalla y avanza el torneo', async ({
   scenario,
   managementPage,

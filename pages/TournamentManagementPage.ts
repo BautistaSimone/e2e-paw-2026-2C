@@ -93,4 +93,9 @@ export class TournamentManagementPage {
   get resultErrors(): Locator {
     return this.page.locator('form.planilla .campo__error');
   }
+
+  /** Aviso de error que la app deja arriba del panel al volver de un redirect. */
+  get flashError(): Locator {
+    return this.page.locator('.flash--error');
+  }
 }

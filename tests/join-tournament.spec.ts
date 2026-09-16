@@ -62,12 +62,29 @@ test('anotarse dos veces con el mismo mail se rechaza sin perder lo tipeado', as
   expect(await ids.registrationsOf(tournament.id)).toHaveLength(1);
 });
 
-test('no se puede anotar mas equipos que el cupo', async ({ scenario, tournamentPage }) => {
-  const tournament = await scenario.withPendingTeams({ name: 'Copa Llena', teams: 4, maxTeams: 4 });
+test('no se puede anotar cuando el cupo ya esta lleno de equipos aceptados', async ({
+  scenario,
+  tournamentPage,
+}) => {
+  const tournament = await scenario.readyToStart({ name: 'Copa Llena', teams: 4, maxTeams: 4 });
 
   await tournamentPage.goto(tournament.id);
   await tournamentPage.joinTeam('Equipo Tarde', 'tarde@fuchibol.test');
 
   await expect(tournamentPage.fieldError('nombre-equipo')).toBeVisible();
   expect(await ids.registrationsOf(tournament.id)).toHaveLength(4);
+});
+
+// Los pendientes no ocupan lugar: se anota quien quiera y el organizador elige
+// despues. Sin esto, los primeros 4 en llegar se quedaban con el torneo aunque
+// el organizador no hubiera aceptado a ninguno.
+test('se puede anotar aunque haya mas pendientes que cupo', async ({ scenario, tournamentPage }) => {
+  const tournament = await scenario.withPendingTeams({ name: 'Copa Abierta', teams: 4, maxTeams: 4 });
+
+  await tournamentPage.goto(tournament.id);
+  await tournamentPage.joinTeam('Equipo Tarde', 'tarde@fuchibol.test');
+
+  const registrations = await ids.registrationsOf(tournament.id);
+  expect(registrations).toHaveLength(5);
+  expect(registrations.filter((registration) => registration.status === 'PENDING')).toHaveLength(5);
 });
