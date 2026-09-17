@@ -8,7 +8,7 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 
-import { E2E_DATABASE_NAME, E2E_SCHEMA_NAME, e2eEnv, ports } from '../lib/config';
+import { E2E_DATABASE_NAME, E2E_SCHEMA_NAME, ports } from '../lib/config';
 import { tablesFromSchema } from '../lib/db';
 import { generateE2eEnvFile } from '../lib/env-file';
 import { ensureMailpit } from '../lib/mailpit';
@@ -110,11 +110,12 @@ async function main(): Promise<void> {
   excludeFromParentRepo();
 
   console.log(
-    `\nListo. La app de la suite corre en http://localhost:${ports.app}` +
-      ` y el organizador es ${e2eEnv()['app.organizer-email'] ?? '(sin definir)'}.\n` +
+    `\nListo. La app de la suite corre en http://localhost:${ports.app}.` +
+      `\nLos usuarios los crea cada test: la app no trae ninguno sembrado.\n` +
       `\n  npm test         corre la suite (levanta Jetty y Mailpit solos)` +
       `\n  npm run test:ui  modo interactivo` +
-      `\n  npm run seed     deja la base en un escenario para tocar a mano\n`,
+      `\n  npm run seed     deja la base en un escenario, con usuario y contraseña` +
+      `\n  npm run db:rebuild  rehace el schema cuando entra una migracion\n`,
   );
 }
 

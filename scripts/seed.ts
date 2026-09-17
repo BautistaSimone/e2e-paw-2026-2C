@@ -8,10 +8,14 @@
  *   npm run seed -- inProgress --teams 6 --round 2
  *   npm run seed -- readyToStart --name "Copa Prueba"
  *   npm run seed -- finished --keep      (no vacia lo que ya habia)
+ *
+ * Ahora ademas imprime las credenciales del organizador: desde que hay login,
+ * un escenario sin con quien entrar no sirve de nada.
  */
 import { request } from '@playwright/test';
 
 import { requireApp } from '../lib/app';
+import { createActorFactory } from '../lib/actors';
 import { baseUrl, mailpitUrl } from '../lib/config';
 import { resetDatabase } from '../lib/db';
 import * as scenarios from '../scenarios';
@@ -22,6 +26,7 @@ const RECIPES = {
   withPendingTeams: scenarios.withPendingTeams,
   readyToStart: scenarios.readyToStart,
   inProgress: scenarios.inProgress,
+  scheduled: scenarios.scheduled,
   finished: scenarios.finished,
 } as const;
 
@@ -74,6 +79,7 @@ Disponibles: ${Object.keys(RECIPES).join(', ')}`,
       teams: number('teams'),
       round: number('round'),
       maxTeams: number('maxTeams'),
+      playersPerTeam: number('players'),
       format: flags.get('format') as scenarios.ScenarioOptions['format'],
     },
     keep: flags.has('keep'),
@@ -88,15 +94,27 @@ if (!keep) {
   console.log(`Base vaciada (${tables.length} tablas).`);
 }
 
-const context = await request.newContext({ baseURL: baseUrl });
+// Sin browser: sembrar es todo HTTP y levantar Chromium seria al pedo.
+const { actors, dispose } = createActorFactory({ request });
 try {
-  const tournament = await RECIPES[recipe](context, options);
+  const tournament: scenarios.TournamentRef = await RECIPES[recipe](actors, options);
+
   console.log(
     `\nEscenario "${recipe}" listo: ${tournament.name} (id ${tournament.id})\n` +
       `\n  Detalle publico   ${baseUrl}/torneos/${tournament.id}` +
-      `\n  Gestion           ${baseUrl}/adminPanel/torneos/${tournament.id}/gestion` +
-      `\n  Mails             ${mailpitUrl}\n`,
+      `\n  Gestion           ${baseUrl}/torneos/${tournament.id}/gestion` +
+      `\n  Mails             ${mailpitUrl}\n` +
+      `\nEntra como el organizador:` +
+      `\n  usuario           ${tournament.owner.email}` +
+      `\n  contraseña        ${tournament.owner.password}\n` +
+      (tournament.teams.length
+        ? `\nCapitanes (misma contraseña):\n` +
+          tournament.teams
+            .map((team) => `  ${team.name.padEnd(24)} ${team.captain.email}`)
+            .join('\n') +
+          '\n'
+        : ''),
   );
 } finally {
-  await context.dispose();
+  await dispose();
 }

@@ -1,90 +1,143 @@
 /**
- * Inscribir un equipo desde la pantalla: el camino feliz, el aviso por mail al
- * organizador y el rechazo por mail repetido.
+ * Anotarse a un torneo y darse de baja.
+ *
+ * Es el flujo que mas cambio desde el sprint 1: el capitan ya no es un mail que
+ * se tipea, es el usuario logueado, y el plantel se carga con chips que crean
+ * cuentas PENDING para los que todavia no se registraron.
  */
-import { ids, expect, test } from '../fixtures';
+import { expect, test, api, ids, pagesOf } from '../fixtures';
 
-test('anotar un equipo lo deja inscripto y avisa al organizador', async ({
+test('un capitan se anota con su plantel y le avisa al organizador', async ({
+  actors,
   scenario,
-  tournamentPage,
   mail,
-  organizer,
 }) => {
-  const tournament = await scenario.open({ name: 'Copa Inscripcion' });
+  const torneo = await scenario.open({ name: 'Copa Con Plantel' });
+  const capitan = await actors.register('capitan');
+  const { tournament } = await pagesOf(capitan);
 
-  await tournamentPage.goto(tournament.id);
-  await tournamentPage.joinTeam('Los Cebollitas', 'capitan@fuchibol.test');
+  await tournament.goto(torneo.id);
+  await tournament.join('Los Cebollitas', ['pepe@fuchibol.test', 'juan@fuchibol.test']);
 
-  const registrations = await ids.registrationsOf(tournament.id);
-  expect(registrations).toHaveLength(1);
-  expect(registrations[0]).toMatchObject({ teamName: 'Los Cebollitas', status: 'PENDING' });
+  await expect(tournament.flash.ok).toBeVisible();
 
-  // El aviso es parte de la operacion: ningun flujo puede "olvidarse" de
-  // notificar. Como el envio es async, se espera en vez de leer una vez.
-  const aviso = await mail.waitForMail({ to: organizer, subject: 'Los Cebollitas' });
-  expect(aviso.Subject).toContain(tournament.name);
+  const inscripciones = await ids.registrationsOf(torneo.id);
+  expect(inscripciones).toHaveLength(1);
+  expect(inscripciones[0]).toMatchObject({ teamName: 'Los Cebollitas', status: 'PENDING' });
+
+  // El capitan tambien juega, asi que el plantel son tres.
+  const plantel = await ids.rosterOf(inscripciones[0]!.teamId);
+  expect(plantel.map((jugador) => jugador.email).sort()).toEqual(
+    ['juan@fuchibol.test', 'pepe@fuchibol.test', capitan.email].sort(),
+  );
+  // Los companeros quedan como cuentas a reclamar, sin password.
+  expect(plantel.find((jugador) => jugador.email === 'pepe@fuchibol.test')?.status).toBe('PENDING');
+
+  const aviso = await mail.waitForMail({ to: torneo.owner.email, subject: 'Los Cebollitas' });
+  expect(aviso.Subject).toContain(torneo.name);
 });
 
-test('el mail al organizador linkea al torneo', async ({
+test('se puede anotar un equipo sin cargar el plantel', async ({ actors, scenario }) => {
+  const torneo = await scenario.open({ name: 'Copa Sin Plantel' });
+  const capitan = await actors.register('capitan');
+  const { tournament } = await pagesOf(capitan);
+
+  await tournament.goto(torneo.id);
+  await tournament.join('Los Solitarios');
+
+  const inscripciones = await ids.registrationsOf(torneo.id);
+  expect(inscripciones).toHaveLength(1);
+  // Solo el capitan.
+  expect(await ids.rosterOf(inscripciones[0]!.teamId)).toHaveLength(1);
+});
+
+test('el editor de plantel rechaza un mail invalido sin ir al servidor', async ({
+  actors,
   scenario,
-  tournamentPage,
-  mail,
-  organizer,
 }) => {
-  const tournament = await scenario.open({ name: 'Copa Links' });
+  const torneo = await scenario.open();
+  const capitan = await actors.register('capitan');
+  const { tournament } = await pagesOf(capitan);
 
-  await tournamentPage.goto(tournament.id);
-  await tournamentPage.joinTeam('Los Galacticos', 'otro.capitan@fuchibol.test');
+  await tournament.goto(torneo.id);
+  await tournament.joinButton.click();
+  await tournament.addPlayer('esto-no-es-un-mail');
 
-  const aviso = await mail.waitForMail({ to: organizer, subject: 'Los Galacticos' });
-
-  // El link sale de app.base-url, nunca del Host del request.
-  expect(mail.linksIn(aviso).some((link) => link.includes(`/torneos/${tournament.id}`))).toBe(true);
+  await expect(tournament.rosterError).not.toBeEmpty();
+  await expect(tournament.rosterChips).toHaveCount(0);
 });
 
-test('anotarse dos veces con el mismo mail se rechaza sin perder lo tipeado', async ({
-  tournamentPage,
+test('el editor de plantel no deja repetir al propio capitan', async ({ actors, scenario }) => {
+  const torneo = await scenario.open();
+  const capitan = await actors.register('capitan');
+  const { tournament } = await pagesOf(capitan);
+
+  await tournament.goto(torneo.id);
+  await tournament.joinButton.click();
+  await tournament.addPlayer(capitan.email);
+
+  await expect(tournament.rosterError).not.toBeEmpty();
+  await expect(tournament.rosterChips).toHaveCount(0);
+});
+
+test('el servidor rechaza un plantel mas grande que el maximo', async ({ actors, scenario }) => {
+  // El limite es 14 companeros (15 con el capitan). Se prueba por HTTP porque
+  // el editor lo frena antes en el browser: lo que se verifica aca es que el
+  // servidor tambien lo frene, que es lo que importa.
+  const torneo = await scenario.open();
+  const capitan = await actors.register('capitan');
+  const demasiados = Array.from({ length: 15 }, (_, i) => `jugador${i}@fuchibol.test`);
+
+  const errores = await api.joinExpectingRejection(
+    capitan.request,
+    torneo.id,
+    'Los Numerosos',
+    { players: demasiados },
+  );
+
+  expect(errores.length).toBeGreaterThan(0);
+  expect(await ids.registrationsOf(torneo.id)).toHaveLength(0);
+});
+
+test('no se puede anotar dos veces al mismo torneo', async ({ actors, scenario }) => {
+  const torneo = await scenario.open();
+  const capitan = await actors.register('capitan');
+  await api.joinTournament(capitan.request, torneo.id, 'Primer Equipo');
+
+  const errores = await api.joinExpectingRejection(capitan.request, torneo.id, 'Segundo Equipo');
+
+  expect(errores.length).toBeGreaterThan(0);
+  expect(await ids.registrationsOf(torneo.id)).toHaveLength(1);
+});
+
+test('con el cupo lleno el boton queda apagado y explica por que', async ({
+  actors,
   scenario,
 }) => {
-  const tournament = await scenario.open({ name: 'Copa Repetida' });
-  await tournamentPage.goto(tournament.id);
-  await tournamentPage.joinTeam('Primer Equipo', 'repetido@fuchibol.test');
+  const torneo = await scenario.readyToStart({ teams: 2, maxTeams: 2 });
+  const tarde = await actors.register('llego-tarde');
+  const { tournament } = await pagesOf(tarde);
 
-  await tournamentPage.joinTeam('Segundo Equipo', 'repetido@fuchibol.test');
+  await tournament.goto(torneo.id);
 
-  // El modal se reabre con el error pegado al campo...
-  await expect(tournamentPage.joinDialog).toBeVisible();
-  await expect(tournamentPage.fieldError('email-capitan')).toBeVisible();
-  // ...y con lo que la persona habia escrito todavia ahi.
-  await expect(tournamentPage.fieldValue('nombre-equipo')).toHaveValue('Segundo Equipo');
-  await expect(tournamentPage.fieldValue('email-capitan')).toHaveValue('repetido@fuchibol.test');
-
-  expect(await ids.registrationsOf(tournament.id)).toHaveLength(1);
+  await expect(tournament.joinButton).toBeDisabled();
+  await expect(tournament.fullNotice).toBeVisible();
 });
 
-test('no se puede anotar cuando el cupo ya esta lleno de equipos aceptados', async ({
-  scenario,
-  tournamentPage,
-}) => {
-  const tournament = await scenario.readyToStart({ name: 'Copa Llena', teams: 4, maxTeams: 4 });
+test('darse de baja libera el lugar y le avisa al organizador', async ({ scenario, mail }) => {
+  const torneo = await scenario.withPendingTeams({ teams: 2 });
+  const equipo = torneo.teams[0]!;
+  const { tournament } = await pagesOf(equipo.captain);
 
-  await tournamentPage.goto(tournament.id);
-  await tournamentPage.joinTeam('Equipo Tarde', 'tarde@fuchibol.test');
+  await tournament.goto(torneo.id);
+  await tournament.leave();
 
-  await expect(tournamentPage.fieldError('nombre-equipo')).toBeVisible();
-  expect(await ids.registrationsOf(tournament.id)).toHaveLength(4);
-});
+  await expect(tournament.flash.ok).toBeVisible();
 
-// Los pendientes no ocupan lugar: se anota quien quiera y el organizador elige
-// despues. Sin esto, los primeros 4 en llegar se quedaban con el torneo aunque
-// el organizador no hubiera aceptado a ninguno.
-test('se puede anotar aunque haya mas pendientes que cupo', async ({ scenario, tournamentPage }) => {
-  const tournament = await scenario.withPendingTeams({ name: 'Copa Abierta', teams: 4, maxTeams: 4 });
+  const inscripcion = (await ids.registrationsOf(torneo.id)).find(
+    (fila) => fila.teamName === equipo.name,
+  );
+  expect(inscripcion?.status).toBe('WITHDRAWN');
 
-  await tournamentPage.goto(tournament.id);
-  await tournamentPage.joinTeam('Equipo Tarde', 'tarde@fuchibol.test');
-
-  const registrations = await ids.registrationsOf(tournament.id);
-  expect(registrations).toHaveLength(5);
-  expect(registrations.filter((registration) => registration.status === 'PENDING')).toHaveLength(5);
+  await mail.waitForMail({ to: torneo.owner.email, subject: equipo.name });
 });

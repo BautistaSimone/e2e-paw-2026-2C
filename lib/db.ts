@@ -144,3 +144,51 @@ export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
 ): Promise<T[]> {
   return withClient(config, async (client) => (await client.query<T>(sql, params)).rows);
 }
+
+/**
+ * Asciende un usuario a ADMIN.
+ *
+ * Unico caso en que la suite escribe en la base en vez de pasar por la app: no
+ * hay pantalla ni endpoint para dar ese rol. La receta manual esta documentada
+ * en persistence/src/main/resources/migrations/README.md y es exactamente este
+ * UPDATE, asi que el test hace lo mismo que haria una persona.
+ */
+export async function promoteToAdmin(email: string, config: DbConfig = dbConfig()): Promise<void> {
+  const updated = await withClient(config, async (client) => {
+    const { rowCount } = await client.query(
+      `UPDATE users SET role = 'ADMIN' WHERE email = $1 AND status = 'ACTIVE'`,
+      [email],
+    );
+    return rowCount ?? 0;
+  });
+  if (updated === 0) {
+    throw new Error(`No pude ascender a "${email}": no existe o no esta ACTIVE.`);
+  }
+}
+
+/**
+ * Tira el schema de la suite entero para que la app lo vuelva a crear.
+ *
+ * Hace falta cada vez que entra una migracion. `schema.sql` es todo
+ * `CREATE TABLE IF NOT EXISTS` — tiene que poder correrse de nuevo sin romper
+ * nada — asi que sobre un schema que ya existe **no agrega columnas nuevas**:
+ * las que entran entre sprints viven en `migrations/` y se aplican a mano
+ * contra la base de la catedra. El lugar de la suite es descartable, asi que en
+ * vez de replicar las migraciones se rehace de cero y queda igual al
+ * `schema.sql` de hoy.
+ *
+ * El guardarrail importante: solo borra un schema que no sea `public`. La base
+ * de desarrollo no se toca ni por accidente.
+ */
+export async function dropSchema(config: DbConfig = dbConfig()): Promise<void> {
+  if (config.schema === 'public') {
+    throw new Error(
+      'Me estas pidiendo borrar el schema "public", que es donde vive tu base de desarrollo.\n' +
+        'La suite trabaja en un schema aparte: corre `npm run setup` antes.',
+    );
+  }
+  await withClient({ ...config, options: undefined }, async (client) => {
+    await client.query(`DROP SCHEMA IF EXISTS ${config.schema} CASCADE`);
+    await client.query(`CREATE SCHEMA ${config.schema}`);
+  });
+}

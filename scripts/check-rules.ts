@@ -1,9 +1,10 @@
 /**
- * Chequea las tres reglas de modularidad de la suite.
+ * Chequea las cuatro reglas de modularidad de la suite.
  *
- * No es un linter de estilo: son las tres reglas que, si se rompen, hacen que
- * la suite deje de andar en la maquina de otro o que un cambio de pantalla
- * rompa veinte tests en vez de un archivo.
+ * No es un linter de estilo: son las reglas que, si se rompen, hacen que la
+ * suite deje de andar en la maquina de otro, que un cambio de pantalla rompa
+ * veinte tests en vez de un archivo, o que empiece a fallar una de cada diez
+ * corridas sin que nadie sepa por que.
  *
  *   npm run check:rules
  */
@@ -50,6 +51,16 @@ const RULES: Rule[] = [
     allowed: [],
     scope: ['tests', 'scenarios'],
     fix: 'Agrega un metodo al page object correspondiente y llamalo desde el test.',
+  },
+  {
+    name: 'Ninguna espera fija (waitForTimeout / setTimeout)',
+    pattern: /(waitForTimeout\(|setTimeout\()/,
+    allowed: ['lib/mail.ts', 'lib/mailpit.ts'],
+    scope: ['lib', 'pages', 'scenarios', 'tests'],
+    fix:
+      'Espera la condicion, no el reloj: expect(...).toBeVisible(), waitForResponse(...) '
+      + 'o mail.waitForMail(...). Un sleep fijo es de donde salen los tests que fallan '
+      + 'uno de cada diez.',
   },
 ];
 
@@ -98,4 +109,4 @@ if (violations > 0) {
   console.log(`\n${violations} archivo(s) rompen una regla.`);
   process.exit(1);
 }
-console.log('\nLas tres reglas se cumplen.');
+console.log('\nLas cuatro reglas se cumplen.');

@@ -113,6 +113,11 @@ export function dbConfig(env: Record<string, string> = e2eEnv()): DbConfig {
   };
 }
 
-/** Mail del organizador: a esa casilla llegan las notificaciones de inscripcion. */
-export const organizerEmail = (env: Record<string, string> = e2eEnv()): string =>
-  env['app.organizer-email'] ?? env['mail.username'] ?? 'organizador@fuchibol.test';
+/**
+ * Dominio de los mails que inventa la suite. No existe: si un test se filtrara
+ * a un SMTP real, no le llega a nadie.
+ */
+export const TEST_EMAIL_DOMAIN = 'fuchibol.test';
+
+/** Password de todos los usuarios que crea la suite. El form pide 8 o mas. */
+export const TEST_PASSWORD = 'fuchibol123';
